@@ -1,0 +1,235 @@
+---
+title: "Report"
+output:
+  pdf_document: 
+  #html_document: default
+    toc: true
+    number_sections: true
+---
+
+# Introduction
+
+This report is part of the final course in the HarvardX Data Science Professional Certificate, Capstone. The aim of the project is to create a movie recommendation system using the MovieLens dataset. Thus, to achieve this goal we will train a machine learning algorithm using the inputs in one subset to predict movie ratings in the validation set.
+
+According to Michael Hahsler: "Predicting ratings and creating personalized recommendations for products like books, songs or movies online came a long way from Information Lense, the first system using social filtering created by Malone, Grant, Turbak, Brobst, and Cohen (1987) more than 20 years ago. Today recommender systems are an accepted technology used by market leaders in several industries (e.g., by Amazon, Netflix and Pandora). Recommender systems apply statistical and knowledge discovery techniques to the problem of making product recommendations based on previously recorded data (Sarwar, Karypis, Konstan, and Riedl 2000). Such recommendations can help to improve the conversion rate by helping the customer to find products she/he wants to buy faster, promote cross-selling by suggesting additional products and can improve customer loyalty through creating a value-added relationship (Schafer, Konstan, and Riedl 2001). The importance and the economic impact of research in this field is reflected by the Netflix Prize, a challenge to improve the predictions of Netflix’s movie recommender system by more than 10% in terms of the root mean square error. The grand price of 1 million dollar was awarded in September 2009 to the Belcore Pragmatic Chaos team."
+
+We will be creating our own recommendation system using the tools we have learned throughout the courses. Thus, we will use R language to write the code, and its libraries, which will help us to complete the task. We will wrangle data, visualize it, and create a machine learning model, which will run using probability and linear regression concepts.
+
+Because the computation will be run on a personal computer, We will use the 10M version of the MovieLens dataset to make it a little easier. This dataset is available on "http://files.grouplens.org/datasets/movielens/ml-10m.zip". Thus, to start we will: install the libraries that will help us to perform our task; download the dataset; create a training and a test set, which will be called edx set and validation set respectively. Then, we will do some data exploration. In sequence we will try two kinds of models. The first one will use the effect of user and movie that works similar to a linear regression. Secondly, we will introducy the recommenderlab package.  
+
+After that, we will measure the quality of our models by RMSE, which stands for root mean square deviation.It is the same measurament the Netflix used in its Challenge, yet in our case the goal is to reach a RMSE less than 0,87750. 
+
+
+#Methods
+a methods/analysis section that explains the process and techniques used, such as data cleaning, data exploration and visualization, any insights gained, and your modeling approach
+
+The first step is to define what libraries we are going to use. We will need the tidyverse package to manipulate the dataset, and the caret package to develop our machine learning model. Since, we will test the recommenderlab package later, we will also start this library. 
+
+Then, we will create the train set, which will be called edx, and the test set, which will be called validation. 
+
+
+```{r setup, include=TRUE, warning=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+#############################################################
+# Create edx set, and validation set
+#############################################################
+
+# Note: this process could take a couple of minutes
+
+if(!require(tidyverse)) install.packages("tidyverse", repos = "http://cran.us.r-project.org")
+if(!require(caret)) install.packages("caret", repos = "http://cran.us.r-project.org")
+if(!require(recommenderlab)) install.packages("caret", repos = "http://cran.us.r-project.org")
+
+# MovieLens 10M dataset:
+# https://grouplens.org/datasets/movielens/10m/
+# http://files.grouplens.org/datasets/movielens/ml-10m.zip
+
+#download the dataset
+dl <- tempfile()
+download.file("http://files.grouplens.org/datasets/movielens/ml-10m.zip", dl)
+
+ratings <- read.table(text = gsub("::", "\t", readLines(unzip(dl, "ml-10M100K/ratings.dat"))),
+                      col.names = c("userId", "movieId", "rating", "timestamp"))
+
+movies <- str_split_fixed(readLines(unzip(dl, "ml-10M100K/movies.dat")), "\\::", 3)
+colnames(movies) <- c("movieId", "title", "genres")
+movies <- as.data.frame(movies) %>% mutate(movieId = as.numeric(levels(movieId))[movieId],
+                                           title = as.character(title),
+                                           genres = as.character(genres))
+
+movielens <- left_join(ratings, movies, by = "movieId")
+
+# Validation set will be 10% of MovieLens data
+
+set.seed(1)
+test_index <- createDataPartition(y = movielens$rating, times = 1, p = 0.1, list = FALSE)
+edx <- movielens[-test_index,]
+temp <- movielens[test_index,]
+
+# Make sure userId and movieId in validation set are also in edx set
+
+validation <- temp %>% 
+  semi_join(edx, by = "movieId") %>%
+  semi_join(edx, by = "userId")
+
+# Add rows removed from validation set back into edx set
+
+removed <- anti_join(temp, validation)
+edx <- rbind(edx, removed)
+
+rm(dl, ratings, movies, test_index, temp, movielens, removed)
+
+```
+
+
+Once our datasets are created, we can examine it to get a better view of what we are dealing with.  
+First we can check names of the collumns: 
+
+```{r}
+names(edx)
+```
+
+We also can check that each row shows the rating that an user has given to a movie. For isntance, we can see the first ten rows of the data:
+
+```{r}
+head(edx, n = 10L)
+```
+
+To find out the number of movies, we can will the code below:
+
+```{r}
+length(unique(edx$movieId))
+```
+
+Similarly we can discovery how many unique users there are in the dataset:
+
+```{r}
+length(unique(edx$userId))
+```
+
+```{r}
+if(!require(tidyverse)) install.packages("tidyverse", repos = "http://cran.us.r-project.org")
+if(!require(caret)) install.packages("caret", repos = "http://cran.us.r-project.org")
+if(!require(recommenderlab)) install.packages("caret", repos = "http://cran.us.r-project.org")
+```
+
+
+
+
+
+#Results
+
+```{r}
+####just the average
+mu_hat <- mean(edx$rating)
+mu_hat
+
+naive_rmse <- RMSE(validation$rating, mu_hat)
+naive_rmse
+
+rmse_results <- data_frame(method = "Just the average", RMSE = naive_rmse)
+rmse_results
+
+```
+
+```{r}
+#####movie effect
+mu <- mean(edx$rating) 
+movie_avgs <- edx %>% 
+  group_by(movieId) %>% 
+  summarize(b_i = mean(rating - mu))
+
+predicted_ratings <- mu + validation %>% 
+  left_join(movie_avgs, by='movieId') %>%
+  .$b_i
+
+model_1_rmse <- RMSE(predicted_ratings, validation$rating)
+
+rmse_results <- bind_rows(rmse_results,
+                          data_frame(method="Movie Effect Model",  
+                                     RMSE = model_1_rmse ))
+rmse_results
+
+
+```
+
+```{r}
+user_avgs <- edx %>% 
+  left_join(movie_avgs, by='movieId') %>%
+  group_by(userId) %>%
+  summarize(b_u = mean(rating - mu - b_i))
+
+predicted_ratings <- validation %>% 
+  left_join(movie_avgs, by='movieId') %>%
+  left_join(user_avgs, by='userId') %>%
+  mutate(pred = mu + b_i + b_u) %>%
+  .$pred
+
+model_2_rmse <- RMSE(predicted_ratings, validation$rating)
+
+rmse_results <- bind_rows(rmse_results,
+                          data_frame(method="User + Movie Effect Model",  
+                                     RMSE = model_2_rmse ))
+
+rmse_results
+```
+
+```{r}
+lambda <- 2.5
+mu <- mean(edx$rating)
+movie_reg_avgs <- edx %>% 
+  group_by(movieId) %>% 
+  summarize(b_i = sum(rating - mu)/(n()+lambda), n_i = n()) 
+
+predicted_ratings <- validation %>% 
+  left_join(movie_reg_avgs, by='movieId') %>%
+  mutate(pred = mu + b_i) %>%
+  .$pred
+
+model_3_rmse <- RMSE(predicted_ratings, validation$rating)
+rmse_results <- bind_rows(rmse_results,
+                          data_frame(method="Regularized Movie Effect Model",  
+                                     RMSE = model_3_rmse ))
+rmse_results
+
+lambdas <- seq(0, 10, 0.25)
+
+mu <- mean(edx$rating)
+just_the_sum <- edx %>% 
+  group_by(movieId) %>% 
+  summarize(s = sum(rating - mu), n_i = n())
+
+rmses <- sapply(lambdas, function(l){
+  predicted_ratings <- validation %>% 
+    left_join(just_the_sum, by='movieId') %>% 
+    mutate(b_i = s/(n_i+l)) %>%
+    mutate(pred = mu + b_i) %>%
+    .$pred
+  return(RMSE(predicted_ratings, validation$rating))
+})
+
+lambdas[which.min(rmses)]
+
+qplot(lambdas, rmses)  
+lambdas[which.min(rmses)]
+
+
+```
+
+
+
+
+
+
+
+#Conclusion
+
+
+
+#References
+
+[1] F. Maxwell Harper and Joseph A. Konstan. 2015. The MovieLens Datasets: History and Context. ACM Transactions on Interactive Intelligent Systems (TiiS) 5, 4, Article 19 (December 2015), 19 pages. DOI=http://dx.doi.org/10.1145/2827872
+
+[2] Michael Hahsler (2019). recommenderlab: Lab for Developing and Testing Recommender Algorithms. R package version 0.2-4.https://github.com/mhahsler/recommenderlab
+
