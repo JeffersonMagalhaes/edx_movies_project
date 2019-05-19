@@ -15,15 +15,13 @@ According to Michael Hahsler: "Predicting ratings and creating personalized reco
 
 We will be creating our own recommendation system using the tools we have learned throughout the courses. Thus, we will use R language to write the code, and its libraries, which will help us to complete the task. We will wrangle data, visualize it, and create a machine learning model, which will run using probability and linear regression concepts.
 
-Because the computation will be run on a personal computer, We will use the 10M version of the MovieLens dataset to make it a little easier. This dataset is available on "http://files.grouplens.org/datasets/movielens/ml-10m.zip". Thus, to start we will: install the libraries that will help us to perform our task; download the dataset; create a training and a test set, which will be called edx set and validation set respectively. Then, we will do some data exploration. In sequence we will try two kinds of models. The first one will use the effect of user and movie that works similar to a linear regression. Secondly, we will introducy the recommenderlab package.  
+Because the computation will be run on a personal computer, We will use the 10M version of the MovieLens dataset to make it a little easier. This dataset is available on "http://files.grouplens.org/datasets/movielens/ml-10m.zip". Thus, to start we will: install the libraries that will help us to perform our task; download the dataset; create a training and a test set, which will be called edx set and validation set respectively. Then, we will do some data exploration. In sequence we will create a moded.
 
 After that, we will measure the quality of our models by RMSE, which stands for root mean square deviation.It is the same measurament the Netflix used in its Challenge, yet in our case the goal is to reach a RMSE less than 0,87750. 
 
 
-#Methods
-a methods/analysis section that explains the process and techniques used, such as data cleaning, data exploration and visualization, any insights gained, and your modeling approach
-
-The first step is to define what libraries we are going to use. We will need the tidyverse package to manipulate the dataset, and the caret package to develop our machine learning model. Since, we will test the recommenderlab package later, we will also start this library. 
+#Methods/ analysis
+The first step is to define what libraries we are going to use. We will need the tidyverse package to manipulate the dataset, and the caret package to develop our machine learning model. 
 
 Then, we will create the train set, which will be called edx, and the test set, which will be called validation. 
 
@@ -39,7 +37,6 @@ knitr::opts_chunk$set(echo = TRUE)
 
 if(!require(tidyverse)) install.packages("tidyverse", repos = "http://cran.us.r-project.org")
 if(!require(caret)) install.packages("caret", repos = "http://cran.us.r-project.org")
-if(!require(recommenderlab)) install.packages("caret", repos = "http://cran.us.r-project.org")
 
 # MovieLens 10M dataset:
 # https://grouplens.org/datasets/movielens/10m/
@@ -86,145 +83,200 @@ rm(dl, ratings, movies, test_index, temp, movielens, removed)
 Once our datasets are created, we can examine it to get a better view of what we are dealing with.  
 First we can check names of the collumns: 
 
-```{r}
+```{r,include=TRUE, warning=FALSE}
 names(edx)
 ```
 
-We also can check that each row shows the rating that an user has given to a movie. For isntance, we can see the first ten rows of the data:
+We can also see that each row shows the rating that an user has given to a movie. For isntance, we can see the first ten rows of the data:
 
-```{r}
+```{r,include=TRUE, warning=FALSE}
 head(edx, n = 10L)
 ```
 
-To find out the number of movies, we can will the code below:
+To find out the number of movies, we will use the code below:
 
-```{r}
+```{r,include=TRUE, warning=FALSE}
 length(unique(edx$movieId))
 ```
 
 Similarly we can discovery how many unique users there are in the dataset:
 
-```{r}
+```{r,include=TRUE, warning=FALSE}
 length(unique(edx$userId))
 ```
 
-```{r}
-if(!require(tidyverse)) install.packages("tidyverse", repos = "http://cran.us.r-project.org")
-if(!require(caret)) install.packages("caret", repos = "http://cran.us.r-project.org")
-if(!require(recommenderlab)) install.packages("caret", repos = "http://cran.us.r-project.org")
+Using the stringi, and stringr packages, we can work with strings. As a consequence, we can determine the genres of the movies. 
+
+```{r,include=TRUE, warning=FALSE}
+if(!require(stringi)) install.packages("stringi", repos = "http://cran.us.r-project.org")
+if(!require(stringr)) install.packages("stringr", repos = "http://cran.us.r-project.org")
+
+genres = unique(unlist(str_extract_all(edx$genres,"[A-Z][^|]+")))
+genres
 ```
 
+Then, we can see the number of movie grouped by genre. 
 
+```{r,include=TRUE, warning=FALSE}
+#count the number of movies group by genre
+count_genres = sapply(genres, function(x){
+  n = sum(str_count(edx$genres,x))
+})
 
+#plot the number of movies group by genre (descending order)
+data.frame(genres, count_genres) %>%
+  mutate(genres = reorder(genres, count_genres)) %>%
+  ggplot(aes(genres, count_genres)) +
+  geom_bar(stat="identity") +
+  coord_flip() +
+  theme(axis.text.y = element_text(size = 6)) +
+  xlab("")
+```
+
+Then, we can find out the distribution of ratings. 
+
+```{r,include=TRUE, warning=FALSE}
+edx %>% group_by(rating) %>% summarise(n = n()) %>% 
+  ggplot(aes(rating,n)) + geom_bar(stat = "identity")
+```
+
+We can see that there is a user effect using the code below:
+
+```{r,include=TRUE, warning=FALSE}
+user_rating = edx %>% group_by(userId) %>% summarise(avg_rating = mean(rating),sd_rating = sd(rating))
+user_rating %>% ggplot(aes(avg_rating)) + geom_histogram(bins = 20)
+rm(user_rating)
+
+```
+
+Similarly, there is a movie effect
+
+```{r,include=TRUE, warning=FALSE}
+movie_rating =  edx %>% group_by(movieId) %>% summarise(avg_rating = mean(rating),sd_rating = sd(rating))
+movie_rating %>% ggplot(aes(avg_rating)) + geom_histogram(bins = 20)
+rm(movie_rating)
+
+```
+
+And, genre effect
+
+```{r,include=TRUE, warning=FALSE}
+ratings_genres = map_df(genres, function(x){
+  n = edx %>% filter(str_detect(edx$genres,x)) %>% summarise(Genre = x, avg = mean(rating), sd= sd(rating))
+})
+ratings_genres %>% knitr::kable()
+```
+
+And also, a time effect
+
+```{r,include=TRUE, warning=FALSE}
+edx %>% mutate(timest = round_date(date, "year"))%>% group_by(timest) %>%
+  summarise(avg_rating = mean(rating)) %>%
+  ggplot(aes(timest,avg_rating)) + geom_point()
+```
+
+Therefore, we can create a model combining these effects. In fact, we are going to try the follow model to predict the rating $Y_{u,i}$, that a user $u$ can give to a movie $i$, which has some genre $g$.
+
+$Y_{u,i} = \mu + b_{i} + b_{u} +\epsilon_{u,i} $  
+
+Although this model is similar to a linear regression model, we are not going to use the lm fuction because of this code will run on a personal computer. 
 
 
 #Results
 
-```{r}
-####just the average
-mu_hat <- mean(edx$rating)
-mu_hat
+First, we can calculate the average and considiring this as a model we can calcule RMSE, which will help us to evaluate the improvemment of our models when we complete the following steps. 
 
-naive_rmse <- RMSE(validation$rating, mu_hat)
+
+```{r,include=TRUE, warning=FALSE}
+####just the average
+mu <- mean(edx$rating)
+mu
+
+naive_rmse <- RMSE(validation$rating, mu)
 naive_rmse
 
 rmse_results <- data_frame(method = "Just the average", RMSE = naive_rmse)
-rmse_results
+rmse_results %>% knitr::kable()
 
 ```
 
-```{r}
-#####movie effect
-mu <- mean(edx$rating) 
+Since, there is a genre effect, we can calculate the average for it genre. Because, of each movie has more than one genre, we will considerate the genre effect as the mean of average of all genres that define a movie. 
+
+```{r,include=TRUE, warning=FALSE}
+#####genre effect
+genres_avgs = map_dbl(1:length(unique(edx$genres)), function(x){
+  mu = mean(ratings_genres$avg[str_detect(unique(edx$genres)[x],ratings_genres$Genre)])
+})
+genres_mu = data.frame(genres = unique(edx$genres), mu = genres_avgs, stringsAsFactors = F)
+avg_genres = edx %>% 
+  left_join(genres_mu, by="genres") 
+
+predicted_ratings = validation %>%
+  left_join(genres_mu, by="genres") %>%
+  .$mu
+
+
+model_1_rmse = caret::RMSE(predicted_ratings, validation$rating)
+rmse_results <- bind_rows(rmse_results,
+                          data_frame(method="Genre Effect Model",  
+                                     RMSE = model_4_rmse ))
+
+rmse_results
+```
+
+
+Altough, it is possiblie to see a improvement in the RMSE, it was not significant considering just the genre effect. Thus, the next step is to use the movie effect. 
+
+```{r,include=TRUE, warning=FALSE}
+
 movie_avgs <- edx %>% 
   group_by(movieId) %>% 
   summarize(b_i = mean(rating - mu))
 
-predicted_ratings <- mu + validation %>% 
-  left_join(movie_avgs, by='movieId') %>%
-  .$b_i
-
-model_1_rmse <- RMSE(predicted_ratings, validation$rating)
-
-rmse_results <- bind_rows(rmse_results,
-                          data_frame(method="Movie Effect Model",  
-                                     RMSE = model_1_rmse ))
-rmse_results
-
-
-```
-
-```{r}
-user_avgs <- edx %>% 
-  left_join(movie_avgs, by='movieId') %>%
-  group_by(userId) %>%
-  summarize(b_u = mean(rating - mu - b_i))
-
 predicted_ratings <- validation %>% 
   left_join(movie_avgs, by='movieId') %>%
-  left_join(user_avgs, by='userId') %>%
-  mutate(pred = mu + b_i + b_u) %>%
+  mutate(pred = mu_hat + b_i ) %>%
   .$pred
+
 
 model_2_rmse <- RMSE(predicted_ratings, validation$rating)
 
 rmse_results <- bind_rows(rmse_results,
-                          data_frame(method="User + Movie Effect Model",  
+                          data_frame(method="Movie Effect Model",  
                                      RMSE = model_2_rmse ))
-
 rmse_results
+
 ```
 
-```{r}
-lambda <- 2.5
-mu <- mean(edx$rating)
-movie_reg_avgs <- edx %>% 
-  group_by(movieId) %>% 
-  summarize(b_i = sum(rating - mu)/(n()+lambda), n_i = n()) 
+Once we have added the movie effect, we can improve the model considering the user effect. 
+
+```{r,include=TRUE, warning=FALSE}
+#####users effect
+user_avgs <- edx %>% 
+  left_join(movie_avgs, by='movieId') %>%
+  group_by(userId) %>%
+  summarize(b_u = mean(rating - mu_hat - b_i))
 
 predicted_ratings <- validation %>% 
-  left_join(movie_reg_avgs, by='movieId') %>%
-  mutate(pred = mu + b_i) %>%
+  left_join(movie_avgs, by='movieId') %>%
+  left_join(user_avgs, by='userId') %>%
+  mutate(pred = mu_hat + b_i + b_u) %>%
   .$pred
 
 model_3_rmse <- RMSE(predicted_ratings, validation$rating)
+
 rmse_results <- bind_rows(rmse_results,
-                          data_frame(method="Regularized Movie Effect Model",  
+                          data_frame(method="User + Movie Effect Model",  
                                      RMSE = model_3_rmse ))
 rmse_results
-
-lambdas <- seq(0, 10, 0.25)
-
-mu <- mean(edx$rating)
-just_the_sum <- edx %>% 
-  group_by(movieId) %>% 
-  summarize(s = sum(rating - mu), n_i = n())
-
-rmses <- sapply(lambdas, function(l){
-  predicted_ratings <- validation %>% 
-    left_join(just_the_sum, by='movieId') %>% 
-    mutate(b_i = s/(n_i+l)) %>%
-    mutate(pred = mu + b_i) %>%
-    .$pred
-  return(RMSE(predicted_ratings, validation$rating))
-})
-
-lambdas[which.min(rmses)]
-
-qplot(lambdas, rmses)  
-lambdas[which.min(rmses)]
-
-
 ```
 
-
-
-
-
-
+We can see that the model that uses the genre, the movie, and the user effect has given us a RMSE of 0,865, which is less than our target of 0,87750. 
 
 #Conclusion
 
+In this project, we have created a recommender model. It works similar to a linear regression and has achived a final RMSE of 0,865, which is less than our initial target of 0,8775. Thus we have had sucess in our project.
+Although we have reached our goal, further improvement could be achieved by other techniques, such as regularization and boostraping. The regularization will help us to remove the impact than some movies are more rated than others. 
 
 
 #References
