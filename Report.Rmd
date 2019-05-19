@@ -2,9 +2,11 @@
 title: "Report"
 output:
   pdf_document: 
-  #html_document: default
+    latex_engine: xelatex
+  #html_document: 
     toc: true
     number_sections: true
+    df_print: kable
 ---
 
 # Introduction
@@ -27,6 +29,7 @@ Then, we will create the train set, which will be called edx, and the test set, 
 
 
 ```{r setup, include=TRUE, warning=FALSE}
+
 knitr::opts_chunk$set(echo = TRUE)
 
 #############################################################
@@ -170,14 +173,19 @@ ratings_genres %>% knitr::kable()
 And also, a time effect
 
 ```{r,include=TRUE, warning=FALSE}
+library(lubridate)
+edx$date = as_datetime(edx$timestamp, origin = "1970-01-01")
+edx$year = year(edx$date)
+
 edx %>% mutate(timest = round_date(date, "year"))%>% group_by(timest) %>%
   summarise(avg_rating = mean(rating)) %>%
   ggplot(aes(timest,avg_rating)) + geom_point()
+
 ```
 
 Therefore, we can create a model combining these effects. In fact, we are going to try the follow model to predict the rating $Y_{u,i}$, that a user $u$ can give to a movie $i$, which has some genre $g$.
 
-$Y_{u,i} = \mu + b_{i} + b_{u} +\epsilon_{u,i} $  
+$$Y_{u,i} = \mu + b_{i} + b_{u} +\epsilon_{u,i}$$  
 
 Although this model is similar to a linear regression model, we are not going to use the lm fuction because of this code will run on a personal computer. 
 
@@ -189,10 +197,10 @@ First, we can calculate the average and considiring this as a model we can calcu
 
 ```{r,include=TRUE, warning=FALSE}
 ####just the average
-mu <- mean(edx$rating)
-mu
+mu_hat <- mean(edx$rating)
+mu_hat
 
-naive_rmse <- RMSE(validation$rating, mu)
+naive_rmse <- RMSE(validation$rating, mu_hat)
 naive_rmse
 
 rmse_results <- data_frame(method = "Just the average", RMSE = naive_rmse)
@@ -219,7 +227,7 @@ predicted_ratings = validation %>%
 model_1_rmse = caret::RMSE(predicted_ratings, validation$rating)
 rmse_results <- bind_rows(rmse_results,
                           data_frame(method="Genre Effect Model",  
-                                     RMSE = model_4_rmse ))
+                                     RMSE = model_1_rmse ))
 
 rmse_results
 ```
@@ -231,7 +239,7 @@ Altough, it is possiblie to see a improvement in the RMSE, it was not significan
 
 movie_avgs <- edx %>% 
   group_by(movieId) %>% 
-  summarize(b_i = mean(rating - mu))
+  summarize(b_i = mean(rating - mu_hat))
 
 predicted_ratings <- validation %>% 
   left_join(movie_avgs, by='movieId') %>%

@@ -112,9 +112,7 @@ ratings_genres %>% knitr::kable()
 
 
 ###########
-head(edx$timestamp)
 library(lubridate)
-?as_datetime
 edx$date = as_datetime(edx$timestamp, origin = "1970-01-01")
 edx$year = year(edx$date)
 
